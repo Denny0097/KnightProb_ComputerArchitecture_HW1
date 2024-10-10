@@ -94,26 +94,10 @@ double knightProbability(int n, int k, int row, int column) {
 }
 
 int main() {
+    
     int n = 3, k = 2, row = 0, column = 0;
     double result = knightProbability(n, k, row, column);
     printf("Probability: %lf\n", result);
     return 0;
 }
 
-
-//another sol(maybe?)
-/*
-
-// assume knight is in the center of the infinited chessboard(4k+1*4k+1), 
-// and restruct the real chessboard by knight's real cell on the infinited chessboard,
-// store the corner cell of real cell on this chessboard in array
-
-// 
-// use tree to check all probabilty of knight's tour, 
-// if knight not in the real chessboard(cell > right corner, top corner || cell <left corner, bot corner)
-// target 1
-
-// p: sum all the 1 that mean not in the real chessboard's total happen, and divide the 8^k
-// return this p
-
-*/

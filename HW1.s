@@ -1,36 +1,16 @@
     .text 
     .globl main
 main:
-
+    
     li      a0, 3
     li      a1, 2
     li      a2, 0
     li      a3, 0
-    call    knightProbability
-
-    mv      t0, a0
+    jal     knightProbability
     #...略過
-
+    mv      t0, a0
     li      a7, 10
     ecall
-
-
-
-    .data
-	.align	2
-    # moves: Knight's possible moves
-moves:
-    .word   2, 1,   2, -1,   -2, 1,   -2, -1
-    .word   1, 2,   1, -2,   -1, 2,   -1, -2
-
-    # DPtable: 動態規劃表
-    .data
-DPtable:
-    .space  18  
-
-    .data
-TDPtable:
-    .space  18                        
     
     # Input: n = 3, k = 2, row = 0, column = 0
     # knightProbability: Calculate knight move probability
@@ -38,11 +18,8 @@ TDPtable:
     .globl knightProbability
 knightProbability:
     # Arguments: a0 = n, a1 = k, a2 = row, a3 = column
-    mv      fp, sp              
-    mv      fp, sp
     addi    sp, sp, -32
     sw      ra, 28(sp)
-    sw      fp, 24(sp)
     sw      a0, 20(sp)       
     sw      a1, 16(sp)       
     sw      a2, 12(sp)       
@@ -68,7 +45,7 @@ init_DPtable:
 
     # Call the custom multiplication function my_mul
     mv      a1, a2              # Copy row into a1 (first argument for my_mul), a0 = n (second argument for my_mul)
-    jal     my_mul              # Call my_mul function to calculate row * n, result in a0
+    call    my_mul              # Call my_mul function to calculate row * n, result in a0
     mv      t2, a0              # Store result back to t2
     lw      a0, 20(sp)
     lw      a1, 16(sp)
@@ -114,7 +91,7 @@ iter_col:
     mv      a0, t4              # Copy row r into a0 (first argument for my_mul)
     mv      a1, a0              # Copy n into a1 (second argument for my_mul)
     sw      t3, 4(sp)
-    jal     my_mul              # Call my_mul function to calculate r * n, result in a0
+    call    my_mul              # Call my_mul function to calculate r * n, result in a0
     lw      t3, 4(sp)
     mv      t6, a0              # Store result back to t6
     sw      a0, 20(sp)
@@ -204,50 +181,16 @@ next_i:
 
 return:
     mv      a0, t6
+    lw      ra, 28(sp)
     addi    sp, sp, 32
-    ret                         # Return final result
+    jr      ra                  # Return final result
 
 
-
-
-    .text
-    .globl fp32_to_bf16
-fp32_to_bf16:   # return value put in a1 
-    mv      fp, sp
-    addi    sp, sp, -16
-    sw      ra, 12(sp)
-    sw      fp, 8(sp)
-    sw      a0, 4(sp)       #store a0 argument(fp32 number)
-
-    # check NaN(((u.i & 0x7fffffff) > 0x7f800000))
-    li      t0, 0x7FFFFFFF
-    and     t1, a0, t0
-    li      t0, 0x7f800000
-    bgt     t1, t0, IsNaN # if t1 > 01 is NaN
-    
-    # not Nan
-    li      t0, 0x7fff
-    srli    t6, a0, 0x10
-    andi    t1, t6, 1
-    add     t0, t0, t1
-    add     t0, a0, t0
-    srli    a1, t0, 0x10
-    addi    sp, sp, 16      
-    ret
-IsNaN:
-    srli    t0, a0, 0x10
-    ori     a0, t0, 64
-    addi    sp, sp, 16   
-    ret
-    
-    
     .text
     .globl bf16_to_fp32
 bf16_to_fp32:
-    mv      fp, sp
     addi    sp, sp, -16          # Save space on stack
     sw      ra, 12(sp)           # Save return address
-    sw      fp, 8(sp)
     sw      a0, 4(sp)           # Save argument
 
     # 將16位BF16數值移到高16位
@@ -260,19 +203,10 @@ bf16_to_fp32:
     jr      ra                  # Return
 
 
-
-
-
-
-
-
-
     .text
     .globl my_mul
 my_mul:
     # Arguments:
-    # a4: multiplicand (被乘數)
-    # a5: multiplier (乘數)
     # Return value in a0
 
     # Initialize result register
@@ -285,17 +219,36 @@ mul_loop:
 
     # If the bit is 1, add (multiplicand << t1) to the result
     beqz    t2, skip_add # If the bit is 0, skip addition
-    sll     t3, a0, t1          # Shift multiplicand by t1 (左移被乘數)
-    add     t0, t0, t3          # Add shifted multiplicand to result (加到結果中)
+    sll     t3, a0, t1          # Shift multiplicand by t1 
+    add     t0, t0, t3          # Add shifted multiplicand to result 
 
 skip_add:
-    # Shift multiplier right by 1 (右移乘數)
+    # Shift multiplier right by 1 
     srli    a1, a1, 1
-    addi    t1, t1, 1           # Increment the bit position counter (增加位移量)
+    addi    t1, t1, 1           # Increment the bit position counter 
     
-    # Repeat for all bits (32位的整數)
+    # Repeat for all bits 
     bnez    a1, mul_loop        # If a1 is not zero, repeat the loop
 
     # Store the result in a0 and return
     mv      a0, t0              # Move result to a0
     ret
+
+
+
+    .data
+    .align 2
+
+    # moves: Knight's possible moves
+moves:
+    .word   2, 1,   2, -1,   -2, 1,   -2, -1
+    .word   1, 2,   1, -2,   -1, 2,   -1, -2
+
+    .data
+    .align 1
+DPtable:
+    .half  0, 0, 0, 0, 0, 0, 0, 0, 0
+    
+    .data
+TDPtable:
+    .half  0, 0, 0, 0, 0, 0, 0, 0, 0
