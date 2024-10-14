@@ -9,7 +9,7 @@ main:
     jal     knightProbability
     #...略過
     mv      t0, a0
-    li      a7, 10
+    li      a7, 2
     ecall
     
     # Input: n = 3, k = 2, row = 0, column = 0
@@ -101,14 +101,16 @@ iter_col:# Check if c == n
     # t0: DP[r][c]'s position, s1: DPtalbe[r][c]
     add     s1, s1, t6          # s1 now points to DPtable[r][c]
     lw      t0, 0(s1)           # Load DPtable[r][c] into t0
+    slli    t0, t0, 16          # trans bf16 to fp32
+    beqz    t0, skip_calculate  # If DPtable[r][c] == 0, skip to next iteration
+    # prob_fp32 /= 8.0f;
+    mv      a0, t0
+    li      a1, 3
+    call    Fdiv
+    mv      a4, a0              # a4: prob_fp32 /= 8.0f
+    lw      a0, 20(sp)
+    lw      a1, 16(sp)
 
-    beqz    t0, skip_calculate      # If DPtable[r][c] == 0, skip to next iteration
-
-    
-    #                        float temp_fp32 = bf16_to_fp32(TDP[moveRow][moveCol]);
-    #                       temp_fp32 += prob_fp32;
-    #                        TDP[moveRow][moveCol] = fp32_to_bf16(temp_fp32);
-    #                    }
     # update TDPtable
     # Convert BF16 to FP32 and divide by 8
     # s8: 8, j: s9
@@ -121,8 +123,8 @@ move_loop:
 
     add     t0, t0, t1      # t0 = move + j*2 + 0
     slli    t0, t0, 1       # t0 now points to move[j][0]
-    lb      t1, 0(t0)       # Load move[j][0]
-    lb      t2, 1(t0)       # Load move[j][1]
+    lw      t1, 0(t0)       # Load move[j][0]
+    lw      t2, 4(t0)       # Load move[j][1]
     add     t1, t1, s4      # t1 = r + move[j][0]
     add     t2, t2, s5      # t2 = c + move[j][1]
     
@@ -131,17 +133,39 @@ move_loop:
     blt     t1, x0, next_move
     bge     t2, a0, next_move
     blt     t2, x0, next_move
+prop_calcu:
     
+    #####
+    mv      a1, t1              # Copy row into a1 (first argument for my_mul), a0 = n (second argument for my_mul)
+    call    my_mul              # Call my_mul function to calculate row * n, result in a0
+    mv      s6, a0              # Store result back to s6
+    lw      a0, 20(sp)
+    lw      a1, 16(sp)
+    add     s6, s6, t2          # Add column index
+    slli    s6, s6, 1           # Each element is 2 bytes, so multiply index by 2
+
+    la      s7, TDPtable        # s7 now points to TDPtable
+    add     s7, s7, s6          # s7 now points to TPtable[r][c]
+
+    lw      t0, 0(s7)
+    mv      a0, t0
+    mv      a1, a4
+    j       Fadd                # jump to  Fadd
+    mv      t0, a0              # temp_fp32 += prob_fp32, a4: prob_fp32 /= 8.0f
+    lw      a0, 20(sp)
+    lw      a1, 16(sp)
+    srli    t0, t0, 16          # tran temp_fp32 to bf16 format
+    sh      t0, 0(s7)           # Store fp32_to_bf16(temp_fp32) to DPtable[row][column]
+    #####
+    lw      t0, 4(sp)
+
 next_move:
     addi    t3, t3, 1
     addi    s9, s9, 1
     bge     s9, s8, skip_calculate
-
-prop_calcu:
-
-
-    lw      t0, 4(sp)
     j       move_loop
+
+
 
 
     # (For simplicity, floating point emulation should be handled here)
@@ -178,7 +202,7 @@ sum_dp_table:
     # Arguments: 
     # a0 = n
 
-    li      t6, 0               # t6 as counter
+    li      t6, 0               # t6 as Prop sum
 
     # Outer loop (i = 0)
     li      t1, 0               # t1 = i
@@ -207,7 +231,12 @@ inner_loop:
     lw      a0, 20(sp)
 
     # Accumulate the result 
-    add     t6, t6, t5          # t6 = t6 + t5
+    mv      a0, t5
+    mv      a1, t6
+    call    Fadd                # t6 = t6 + t5
+    mv      t6, a0
+    lw      a0, 20(sp)
+    lw      a1, 16(sp)
 
     # Increment j
     addi    t2, t2, 1           # j++
@@ -275,6 +304,121 @@ skip_add:
     ret
 
 
+    
+    # a0: float val, a1: exp of 2
+    # Function to perform floating-point division
+    .text
+    .globl Fdiv
+Fdiv:
+    addi    sp, sp, -16
+    sw      ra, 12(sp)
+    sw      a0, 8(sp)
+    sw      a1, 4(sp)
+    
+    li      t3, 0x7f800000
+    and     t1, a0, t3
+    srli    t1, t1, 23
+    li      t2, 0x80
+    bge     t1, t2, Exp_post  # check if exp of float num is postive
+
+    sub     t0, t1, a1
+    slli    t0, t0, 23
+    
+    li      t3, 0x800fffff
+    and     t1, a0, t3
+    or      a0, t1, t0
+    lw      ra, 12(sp)
+    lw      a1, 4(sp)
+    addi    sp, sp, 16
+    ret
+
+Exp_post:
+    add     t0, t1, a1
+    slli    t0, t0, 23
+    
+    li      t3, 0x800fffff
+    and     t1, a0, t3
+    or      a0, t1, t0
+    lw      ra, 12(sp)
+    lw      a1, 4(sp)
+    addi    sp, sp, 16
+    ret
+
+
+
+    .text 
+    .globl fadd
+Fadd:
+    addi    sp, sp, -24
+    sw      ra, 20(sp)
+    sw      t0, 16(sp)
+    sw      t1, 12(sp)
+    sw      t2, 8(sp)
+    sw      t3, 4(sp)
+    sw      s0, 0(sp)
+
+
+    beq     a0, zero, return_num1
+    beq     a1, zero, return_num2
+    j       not_zero
+
+return_num1:                # when f1 = 0, return a1
+    mv      a0, a1
+    j       return_f
+
+return_num2:                # when f2 = 0, return a0
+    j       return_f
+
+not_zero:
+    mv      t0, a0
+    mv      t1, a1          
+    
+    slli    t4, t0, 1       # don't need to get sign
+    srli    t4, t4, 24      # exponent of f1
+    slli    t5, t1, 1
+    srli    t5, t5, 24      # exponent of f2
+
+    li      s0, 0x800000
+    andi    s1, t0, 0x1ff   # fraction of f1
+    or      s1, s1, s0      # add hidden bit
+    andi    s2, t1, 0x1ff   # fraction of f2
+    or      s2, s2, s0      # add hidden bit
+
+    bge     t4, t5, not_taken1  #if f1 > f2, branch to not_tacken1
+    sub     t6, t5, t4      # else, shift = e2 - e1
+    srl     s1, s1, t6      # right shift fraction1
+    mv      t4, t5          # let t4 stroes the bigger exponent
+
+not_taken1:
+    sub     t6, t4, t5      # shift = e1 - e2
+    srl     s2, s2, t6      # right shift fraction2
+    add     s3, s1, s2      # result = fraction1 + fraction2
+
+    li      s0, 0x1000000   # normalize the number
+    and     s1, s3, s0
+    beq     s1, zero, not_taken2
+    srli    s3, s3, 1          # right shift the fraction
+    addi    t4, t4, 1          # exponent+=1
+
+not_taken2:
+    slli    t4, t4, 23         # exponent << 23
+    li      s0, 0x7FFFFF
+    and     s3, s3, s0          # fraction & 0x7FFFFF
+    or      a0, t4, s3           # concat the number
+
+    li      a7, 2
+    ecall
+return_f:
+    lw      ra, 20(sp)
+    lw      t0, 16(sp)
+    lw      t1, 12(sp)
+    lw      t2, 8(sp)
+    lw      t3, 4(sp)
+    lw      s0, 0(sp)
+    addi    sp, sp, 24
+    ret
+
+
 
     .data
     .align 2
@@ -285,10 +429,13 @@ moves:
     .word   1, 2,   1, -2,   -1, 2,   -1, -2
 
     .data
-    .align 1
 DPtable:
     .half  0, 0, 0, 0, 0, 0, 0, 0, 0
     
     .data
 TDPtable:
     .half  0, 0, 0, 0, 0, 0, 0, 0, 0
+str2: .string "Test case : "
+str3: .string " , "
+str4: .string " test answer : "
+str5: .string "\n"
