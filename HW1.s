@@ -35,14 +35,14 @@ DP_initial:
     la      t1, DPtable         # Load DPtable base address into t1
     li      t2, 18              # Set the size of DPtable (3x3 table, adjust accordingly for other sizes)
 
-init_DPtable:
+DP_zero_full:
     sh      t0, 0(t1)           # Store zero into DPtable
     addi    t1, t1, 2           # Move to next word in DPtable
     addi    t2, t2, -2          # Decrease counter
-    bnez    t2, init_DPtable    # Repeat until DPtable is filled
+    bnez    t2, DP_zero_full    # Repeat until DPtable is filled
 
     # Set DPtable[row][column] = 1.0 (in BF16 format)
-
+Set_one_to_DPrc:
     # Call the custom multiplication function my_mul
     mv      a1, a2              # Copy row into a1 (first argument for my_mul), a0 = n (second argument for my_mul)
     call    my_mul              # Call my_mul function to calculate row * n, result in a0
@@ -60,28 +60,28 @@ init_DPtable:
 
 
 # Main loop: Iterate k times
-    li      t3, 0               # Set loop counter i = 0
+    li      s3, 0               # Set loop counter i = 0
 main_loop:
-    bge     t3, a1, loop_end    # if i >= k, exit loop
+    bge     s3, a1, loop_end    # if i >= k, exit loop
 
     # Initialize TDPtable with zeros
     li      t0, 0
     la      t1, TDPtable        # Load TDPtable base address into t1
     li      t2, 18              # Set the size of TDPtable (3x3 table)
 
-init_TDPtable:
+TDP_zero_full:
     sh      t0, 0(t1)           # Store zero into TDPtable
     addi    t1, t1, 2           # Move to next word in TDPtable
     addi    t2, t2, -2          # Decrease counter
-    bnez    t2, init_TDPtable   # Repeat until TDPtable is filled
+    bnez    t2, TDP_zero_full   # Repeat until TDPtable is filled
 
     # Iterate over DPtable and update TDPtable
     li      t4, 0               # Set r = 0
-iter_row:
+iter_row:# Check if r == n
     bge     t4, a0, row_done    # if r >= n, finish processing rows
 
     li      t5, 0               # Set c = 0
-iter_col:
+iter_col:# Check if c == n
     bge     t5, a0, col_done    # if c >= n, finish processing columns
 
     # Check if DPtable[r][c] > 0
@@ -90,26 +90,38 @@ iter_col:
     # Call the custom multiplication function my_mul
     mv      a0, t4              # Copy row r into a0 (first argument for my_mul)
     mv      a1, a0              # Copy n into a1 (second argument for my_mul)
-    sw      t3, 4(sp)
+    sw      s3, 4(sp)
     call    my_mul              # Call my_mul function to calculate r * n, result in a0
-    lw      t3, 4(sp)
+    lw      s3, 4(sp)
     mv      t6, a0              # Store result back to t6
-    sw      a0, 20(sp)
-    sw      a1, 16(sp)
+    lw      a0, 20(sp)
+    lw      a1, 16(sp)
     add     t6, t6, t5          # Add column index
     slli    t6, t6, 1           # Each element is 2 bytes, so multiply index by 2
     add     t1, t1, t6          # t1 now points to DPtable[r][c]
     lw      t0, 0(t1)           # Load DPtable[r][c] into t0
 
-    beqz    t0, skip_moves      # If DPtable[r][c] == 0, skip to next iteration
+    beqz    t0, skip_calculate      # If DPtable[r][c] == 0, skip to next iteration
 
+    ## if (moveRow >= 0 && moveRow < n && moveCol >= 0 && moveCol < n) {
+    #                        float temp_fp32 = bf16_to_fp32(TDP[moveRow][moveCol]);
+    #                       temp_fp32 += prob_fp32;
+    #                        TDP[moveRow][moveCol] = fp32_to_bf16(temp_fp32);
+    #                    }
+    # update TDPtable
     # Convert BF16 to FP32 and divide by 8
+    li      t3, 0
+move_loop:
+    
+    
+next_move:
+
     # (For simplicity, floating point emulation should be handled here)
     # Store results back to TDPtable, updating neighboring cells based on knight moves
 
     # ... (Process knight moves logic and update TDPtable)
 
-skip_moves:
+skip_calculate:
     addi    t5, t5, 1           # c++
     j       iter_col
 
@@ -130,7 +142,7 @@ copy_loop:
     addi    t3, t3, -2          # Decrease counter
     bnez    t3, copy_loop       # Repeat until DPtable is updated
 
-    addi    t3, t3, 1           # i++
+    addi    s3, s3, 1           # i++
     j       main_loop           # Continue main loop
 
 loop_end:
