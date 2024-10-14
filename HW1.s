@@ -77,18 +77,18 @@ TDP_zero_full:
 
     # Iterate over DPtable and update TDPtable
     li      t4, 0               # Set r = 0
-iter_row:# Check if r == n
-    bge     t4, a0, row_done    # if r >= n, finish processing rows
+iter_row:# Check if r == n, r: s4, c: s5, r*n: t6
+    bge     s4, a0, row_done    # if r >= n, finish processing rows
 
-    li      t5, 0               # Set c = 0
+    li      s5, 0               # Set c = 0
 iter_col:# Check if c == n
-    bge     t5, a0, col_done    # if c >= n, finish processing columns
+    bge     s5, a0, col_done    # if c >= n, finish processing columns
 
     # Check if DPtable[r][c] > 0
-    la      t1, DPtable         # Load DPtable base address into t1
+    la      s1, DPtable         # Load DPtable base address into t1
 
     # Call the custom multiplication function my_mul
-    mv      a0, t4              # Copy row r into a0 (first argument for my_mul)
+    mv      a0, s4              # Copy row r into a0 (first argument for my_mul)
     mv      a1, a0              # Copy n into a1 (second argument for my_mul)
     sw      s3, 4(sp)
     call    my_mul              # Call my_mul function to calculate r * n, result in a0
@@ -96,25 +96,53 @@ iter_col:# Check if c == n
     mv      t6, a0              # Store result back to t6
     lw      a0, 20(sp)
     lw      a1, 16(sp)
-    add     t6, t6, t5          # Add column index
+    add     t6, t6, s5          # Add column index
     slli    t6, t6, 1           # Each element is 2 bytes, so multiply index by 2
-    add     t1, t1, t6          # t1 now points to DPtable[r][c]
-    lw      t0, 0(t1)           # Load DPtable[r][c] into t0
+    # t0: DP[r][c]'s position, s1: DPtalbe[r][c]
+    add     s1, s1, t6          # s1 now points to DPtable[r][c]
+    lw      t0, 0(s1)           # Load DPtable[r][c] into t0
 
     beqz    t0, skip_calculate      # If DPtable[r][c] == 0, skip to next iteration
 
-    ## if (moveRow >= 0 && moveRow < n && moveCol >= 0 && moveCol < n) {
+    
     #                        float temp_fp32 = bf16_to_fp32(TDP[moveRow][moveCol]);
     #                       temp_fp32 += prob_fp32;
     #                        TDP[moveRow][moveCol] = fp32_to_bf16(temp_fp32);
     #                    }
     # update TDPtable
     # Convert BF16 to FP32 and divide by 8
-    li      t3, 0
+    # s8: 8, j: s9
+    li      s9, 0
+    li      s8, 8
 move_loop:
+    sw      t0, 4(sp)       # temp store DPtable[r][c] val
+    slli    t1, s9, 1       # j*2
+    la      t0, moves        # use t0 for move array's position
+
+    add     t0, t0, t1      # t0 = move + j*2 + 0
+    slli    t0, t0, 1       # t0 now points to move[j][0]
+    lb      t1, 0(t0)       # Load move[j][0]
+    lb      t2, 1(t0)       # Load move[j][1]
+    add     t1, t1, s4      # t1 = r + move[j][0]
+    add     t2, t2, s5      # t2 = c + move[j][1]
     
+    ## if (moveRow >= 0 && moveRow < n && moveCol >= 0 && moveCol < n)
+    bge     t1, a0, next_move
+    blt     t1, x0, next_move
+    bge     t2, a0, next_move
+    blt     t2, x0, next_move
     
 next_move:
+    addi    t3, t3, 1
+    addi    s9, s9, 1
+    bge     s9, s8, skip_calculate
+
+prop_calcu:
+
+
+    lw      t0, 4(sp)
+    j       move_loop
+
 
     # (For simplicity, floating point emulation should be handled here)
     # Store results back to TDPtable, updating neighboring cells based on knight moves
