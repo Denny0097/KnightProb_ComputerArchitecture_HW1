@@ -118,13 +118,13 @@ iter_col:# Check if c == n
     li      s8, 8
 move_loop:
     sw      t0, 4(sp)       # temp store DPtable[r][c] val
-    slli    t1, s9, 1       # j*2
+    slli    t1, s9, 3       # j*2*4
     la      t0, moves        # use t0 for move array's position
 
-    add     t0, t0, t1      # t0 = move + j*2 + 0
-    slli    t0, t0, 1       # t0 now points to move[j][0]
+    add     t0, t0, t1      # t0 = move + j*2*4,t0 now points to move[j][0]
     lw      t1, 0(t0)       # Load move[j][0]
-    lw      t2, 4(t0)       # Load move[j][1]
+    addi    t0, t0, 4
+    lw      t2, 0(t0)       # Load move[j][1]
     add     t1, t1, s4      # t1 = r + move[j][0]
     add     t2, t2, s5      # t2 = c + move[j][1]
     
@@ -150,7 +150,7 @@ prop_calcu:
     lw      t0, 0(s7)
     mv      a0, t0
     mv      a1, a4
-    j       Fadd                # jump to  Fadd
+    call    Fadd                # jump to  Fadd
     mv      t0, a0              # temp_fp32 += prob_fp32, a4: prob_fp32 /= 8.0f
     lw      a0, 20(sp)
     lw      a1, 16(sp)
