@@ -144,13 +144,14 @@ prop_calcu:
     mv      s6, a0              # Store result back to s6
     lw      a0, 20(sp)
     lw      a1, 16(sp)
-    add     s6, s6, t2          # Add column index
+    add     s6, s6, t2          # Add column indexs
     slli    s6, s6, 1           # Each element is 2 bytes, so multiply index by 2
 
     la      s7, TDPtable        # s7 now points to TDPtable
     add     s7, s7, s6          # s7 now points to TPtable[r][c]
 
     lw      t0, 0(s7)
+    slli    t0, t0, 16
     mv      a0, t0
     mv      a1, a4
     call    Fadd                # jump to  Fadd
@@ -190,7 +191,7 @@ row_done:
     la      t2, TDPtable        # Load TDPtable base address into t2
     li      t3, 18              # Copy 18 bytes (3x3 table)
 copy_loop:
-    lw      t0, 0(t2)           # Load word from TDPtable
+    lh      t0, 0(t2)           # Load word from TDPtable
     sh      t0, 0(t1)           # Store word to DP
     addi    t1, t1, 2           # Move to next word in DPtable
     addi    t2, t2, 2           # Move to next word in TDPtable
@@ -201,6 +202,20 @@ copy_loop:
     j       main_loop           # Continue main loop
 
 loop_end:
+    # test
+    li      s2, 18
+    la      s1, DPtable
+test_loop:
+    lh      a0, 0(s1)
+    li      a7, 1
+    ecall
+    la      a0, str3
+    li      a7, 4
+    ecall
+    addi    s1, s1, 2
+    addi    s2, s2, -2
+    bnez    s2, test_loop
+    #
 sum_dp_table:
     # Arguments: 
     # a0 = n
@@ -208,40 +223,45 @@ sum_dp_table:
     li      t6, 0               # t6 as Prop sum
 
     # Outer loop (i = 0)
-    li      t1, 0               # t1 = i
+    li      s1, 0               # s1 = i
 outer_loop:
+   
+    lw      a0, 20(sp)	
+    bge     s1, a0, return    
+    
+    # Inner loop (j = 0)
+    li      s2, 0               # t2 = j
+inner_loop:
+    lw      a0, 20(sp)
+    bge     s2, a0, next_i      # if j >= n, branch to next outer loop
 
-# test
-    la      a0, str6
+    # Calculate DPtable[i][j] address: base + (i * n + j) * 2
+    mv      a1, s1
+    call    my_mul              # t3 = i * n
+    mv      t3, a0
+    lw      a0, 20(sp)
+    lw      a1, 16(sp)
+
+
+    add     t3, t3, s2          # t3 = i * n + j
+    slli    t3, t3, 1           # t3 = (i * n + j) * 2
+    
+    # test t3 val
+    la      a0, str2
     li      a7, 4
     ecall
-    la      a0, str3
-    li      a7, 4
+
+    mv      a0, t3
+    li      a7, 1
     ecall
-    mv      a0, t1
-    li      a7, 2
-    ecall
+    
     la      a0, str5
     li      a7, 4
     ecall
-    mv      a0, t6
-    li      a7, 2
-    ecall
-# test
-    lw      a0, 20(sp)
-    bge     t1, a0, return    
+    #
 
-    # Inner loop (j = 0)
-    li      t2, 0               # t2 = j
-inner_loop:
-    bge     t2, a0, next_i      # if j >= n, branch to next outer loop
-
-    # Calculate DPtable[i][j] address: base + (i * n + j) * 2
-    mul     t3, t1, a0          # t3 = i * n
-    add     t3, t3, t2          # t3 = i * n + j
-    slli    t3, t3, 1           # t3 = (i * n + j) * 2
     la      t0, DPtable      
-    add     t3, t3, t0          # t3 = DPtable[i][j] 
+    add     t3, t3, t0          # t3 = DPtable[i][j]'s position 
 
     # Load the BF16 value from DPtable[i][j] 
     lh      t4, 0(t3)           # load BF16 to t4
@@ -251,20 +271,45 @@ inner_loop:
     jal     bf16_to_fp32        # call bf16_to_fp32, save return val at a0
     mv      t5, a0              # store fp val in t5
     mv      a1, t6
+    sw      s1, 4(sp)
+    sw      s2, 0(sp)
     call    Fadd                # t6 = t6 + t5
-
-
+    lw      s1, 4(sp)
+    lw      s2, 0(sp)
     mv      t6, a0
     lw      a0, 20(sp)
     lw      a1, 16(sp)
 
     # Increment j
-    addi    t2, t2, 1           # j++
+    addi    s2, s2, 1           # j++
     j       inner_loop          
 
 next_i:
     # Increment i
-    addi    t1, t1, 1           # i++
+    addi    s1, s1, 1           # i++
+    # test 
+    
+    la      a0, str6
+    li      a7, 4
+    ecall
+    
+    mv      a0, s1
+    li      a7, 1
+    ecall
+    
+    la      a0, str3
+    li      a7, 4
+    ecall
+
+    mv      a0, t6
+    li      a7, 2
+    ecall
+    
+    la      a0, str5
+    li      a7, 4
+    ecall
+    
+    # test
     j       outer_loop            
 
 
@@ -439,7 +484,7 @@ DPtable:
     .data
 TDPtable:
     .half  0, 0, 0, 0, 0, 0, 0, 0, 0
-str2: .string "Test case : "
+str2: .string "Test t3: : "
 str3: .string " , "
 str4: .string " test answer : "
 str5: .string "\n"
