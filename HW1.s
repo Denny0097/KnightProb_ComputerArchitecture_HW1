@@ -11,7 +11,10 @@ main:
     mv      t0, a0
     li      a7, 2
     ecall
-    
+    li a7, 93       
+    li a0, 0        
+    ecall           
+
     # Input: n = 3, k = 2, row = 0, column = 0
     # knightProbability: Calculate knight move probability
     .text
@@ -76,12 +79,12 @@ TDP_zero_full:
     bnez    t2, TDP_zero_full   # Repeat until TDPtable is filled
 
     # Iterate over DPtable and update TDPtable
-    li      t4, 0               # Set r = 0
-iter_row:# Check if r == n, r: s4, c: s5, r*n: t6
+    li      s4, 0               # Set r = 0
+iter_row:                       # Check if r == n, r: s4, c: s5, r*n: t6
     bge     s4, a0, row_done    # if r >= n, finish processing rows
 
     li      s5, 0               # Set c = 0
-iter_col:# Check if c == n
+iter_col:                       # Check if c == n
     bge     s5, a0, col_done    # if c >= n, finish processing columns
 
     # Check if DPtable[r][c] > 0
@@ -174,11 +177,11 @@ next_move:
     # ... (Process knight moves logic and update TDPtable)
 
 skip_calculate:
-    addi    t5, t5, 1           # c++
+    addi    s5, s5, 1           # c++
     j       iter_col
 
 col_done:
-    addi    t4, t4, 1           # r++
+    addi    s4, s4, 1           # r++
     j       iter_row
 
 row_done:
@@ -207,12 +210,31 @@ sum_dp_table:
     # Outer loop (i = 0)
     li      t1, 0               # t1 = i
 outer_loop:
+
+# test
+    la      a0, str6
+    li      a7, 4
+    ecall
+    la      a0, str3
+    li      a7, 4
+    ecall
+    mv      a0, t1
+    li      a7, 2
+    ecall
+    la      a0, str5
+    li      a7, 4
+    ecall
+    mv      a0, t6
+    li      a7, 2
+    ecall
+# test
+    lw      a0, 20(sp)
     bge     t1, a0, return    
 
     # Inner loop (j = 0)
     li      t2, 0               # t2 = j
 inner_loop:
-    bge     t2, a0, next_i      # 如果 j >= n，跳到下一個外層迴圈
+    bge     t2, a0, next_i      # if j >= n, branch to next outer loop
 
     # Calculate DPtable[i][j] address: base + (i * n + j) * 2
     mul     t3, t1, a0          # t3 = i * n
@@ -228,12 +250,10 @@ inner_loop:
     mv      a0, t4              # a0 = bf val
     jal     bf16_to_fp32        # call bf16_to_fp32, save return val at a0
     mv      t5, a0              # store fp val in t5
-    lw      a0, 20(sp)
-
-    # Accumulate the result 
-    mv      a0, t5
     mv      a1, t6
     call    Fadd                # t6 = t6 + t5
+
+
     mv      t6, a0
     lw      a0, 20(sp)
     lw      a1, 16(sp)
@@ -260,13 +280,11 @@ return:
 bf16_to_fp32:
     addi    sp, sp, -16          # Save space on stack
     sw      ra, 12(sp)           # Save return address
-    sw      a0, 4(sp)           # Save argument
+    sw      a0, 8(sp)           # Save argument
 
     # 將16位BF16數值移到高16位
-    slli    t0, a0, 16          # Move BF16 to high 16 bits of 32-bit FP32
+    slli    a0, a0, 16          # Move BF16 to high 16 bits of 32-bit FP32
     # 結果存回 a1，這裡 u.f = u.i (直接返回)
-    mv      a0, t0              # Move the result to return register
-
     lw      ra, 12(sp)           # Restore return address
     addi    sp, sp, 16           # Restore stack
     jr      ra                  # Return
@@ -319,21 +337,8 @@ Fdiv:
     and     t1, a0, t3
     srli    t1, t1, 23
     li      t2, 0x80
-    bge     t1, t2, Exp_post  # check if exp of float num is postive
-
-    sub     t0, t1, a1
-    slli    t0, t0, 23
     
-    li      t3, 0x800fffff
-    and     t1, a0, t3
-    or      a0, t1, t0
-    lw      ra, 12(sp)
-    lw      a1, 4(sp)
-    addi    sp, sp, 16
-    ret
-
-Exp_post:
-    add     t0, t1, a1
+    sub     t0, t1, a1
     slli    t0, t0, 23
     
     li      t3, 0x800fffff
@@ -407,7 +412,6 @@ not_taken2:
     or      a0, t4, s3           # concat the number
 
     li      a7, 2
-    ecall
 return_f:
     lw      ra, 20(sp)
     lw      t0, 16(sp)
@@ -439,3 +443,4 @@ str2: .string "Test case : "
 str3: .string " , "
 str4: .string " test answer : "
 str5: .string "\n"
+str6: .string "round "
