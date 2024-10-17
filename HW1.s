@@ -61,6 +61,38 @@ Set_one_to_DPrc:
     sh      t0, 0(t1)           # Store 1.0 (in BF16 format) to DPtable[row][column]
 
 
+# test_DPtable
+    la      a0, str7
+    li      a7, 4
+    ecall
+    mv      a0, s3
+    li      a7, 1
+    ecall
+    la      a0, str8
+    li      a7, 4
+    ecall
+    li      s2, 18
+    la      s1, DPtable
+
+ test_loop_0:
+    lh      a0, 0(s1)
+    slli    a0, a0, 16
+    li      a7, 2
+    ecall
+    la      a0, str3
+    li      a7, 4
+    ecall
+    addi    s1, s1, 2
+    addi    s2, s2, -2
+    bnez    s2, test_loop_0	
+    la      a0, str5
+    li      a7, 4
+    ecall
+
+    lw      a0, 20(sp)
+#
+
+
 
 # Main loop: Iterate k times
     li      s3, 0               # Set loop counter i = 0
@@ -88,20 +120,21 @@ iter_col:                       # Check if c == n
     bge     s5, a0, col_done    # if c >= n, finish processing columns
 
     # Check if DPtable[r][c] > 0
-    la      s1, DPtable         # Load DPtable base address into t1
+    la      s1, DPtable         # Load DPtable base address into s1
 
     # Call the custom multiplication function my_mul
-    mv      a0, s4              # Copy row r into a0 (first argument for my_mul)
-    mv      a1, a0              # Copy n into a1 (second argument for my_mul)
+    mv      a1, s5              # Copy c into a1 (first argument for my_mul)
+    lw      a0, 20(sp)
     sw      s3, 4(sp)
-    call    my_mul              # Call my_mul function to calculate r * n, result in a0
+    call    my_mul              # Call my_mul function to calculate c * n, result in a0
     lw      s3, 4(sp)
     mv      t6, a0              # Store result back to t6
     lw      a0, 20(sp)
     lw      a1, 16(sp)
-    add     t6, t6, s5          # Add column index
+    add     t6, t6, s4          # Add row index
     slli    t6, t6, 1           # Each element is 2 bytes, so multiply index by 2
-    # t0: DP[r][c]'s position, s1: DPtalbe[r][c]
+    # t0: DP[r][c]'s val, s1: DPtalbe[r][c]'s position
+    la      s1, DPtable
     add     s1, s1, t6          # s1 now points to DPtable[r][c]
     lw      t0, 0(s1)           # Load DPtable[r][c] into t0
     slli    t0, t0, 16          # trans bf16 to fp32
@@ -117,56 +150,122 @@ iter_col:                       # Check if c == n
     # update TDPtable
     # Convert BF16 to FP32 and divide by 8
     # s8: 8, j: s9
-    li      s9, 0
+    la      s9, moves
     li      s8, 8
 move_loop:
-    sw      t0, 4(sp)       # temp store DPtable[r][c] val
-    slli    t1, s9, 3       # j*2*4
-    la      t0, moves        # use t0 for move array's position
 
-    add     t0, t0, t1      # t0 = move + j*2*4,t0 now points to move[j][0]
-    lw      t1, 0(t0)       # Load move[j][0]
-    addi    t0, t0, 4
-    lw      t2, 0(t0)       # Load move[j][1]
+# test s4(r)
+    la      a0, str10
+    li      a7, 4
+    ecall
+    mv      a0, s4
+    li      a7, 1
+    ecall
+#
+# test s5(c)
+    la      a0, str3
+    li      a7, 4
+    ecall
+    la      a0, str11
+    li      a7, 4
+    ecall
+    mv      a0, s5
+    li      a7, 1
+    ecall
+    lw      a0, 20(sp)
+#
+
+    sw      t0, 4(sp)       # temp store DPtable[r][c] val
+    lw      t1, 0(s9)       # Load move[j][0]
+    lw      t2, 4(s9)       # Load move[j][1]
+
+# test move val
+    la      a0, str9
+    li      a7, 4
+    ecall
+    mv      a0, t1
+    li      a7, 1
+    ecall
+    la      a0, str3
+    li      a7, 4
+    ecall
+    mv      a0, t2
+    li      a7, 1
+    ecall
+    
+    la      a0, str5
+    li      a7, 4
+    ecall
+    lw      a0, 20(sp)
+#
     add     t1, t1, s4      # t1 = r + move[j][0]
     add     t2, t2, s5      # t2 = c + move[j][1]
-    
+
     ## if (moveRow >= 0 && moveRow < n && moveCol >= 0 && moveCol < n)
     bge     t1, a0, next_move
     blt     t1, x0, next_move
     bge     t2, a0, next_move
     blt     t2, x0, next_move
 prop_calcu:
+# check move val which legal
+    la      a0, str5
+    li      a7, 4
+    ecall
+    la      a0, str9
+    li      a7, 4
+    ecall
+    mv      a0, t1
+    li      a7, 1
+    ecall
+    la      a0, str3
+    li      a7, 4
+    ecall
+    mv      a0, t2
+    li      a7, 1
+    ecall
     
+    la      a0, str5
+    li      a7, 4
+    ecall
+    lw      a0, 20(sp)
+#
+
+
     #####
-    mv      a1, t1              # Copy row into a1 (first argument for my_mul), a0 = n (second argument for my_mul)
-    call    my_mul              # Call my_mul function to calculate row * n, result in a0
-    mv      s6, a0              # Store result back to s6
+    mv      a1, t2              # Copy row into a1 (first argument for my_mul), a0 = n (second argument for my_mul)
+    call    my_mul              # Call my_mul function to calculate col * n, result in a0
+    mv      s6, a0              # Store result (col * n) back to s6
     lw      a0, 20(sp)
     lw      a1, 16(sp)
-    add     s6, s6, t2          # Add column indexs
-    slli    s6, s6, 1           # Each element is 2 bytes, so multiply index by 2
+    add     s6, s6, t1          # Add row indexs
+    slli    s6, s6, 1           # Each element is 2 bytes, so multiply index by 2 => (col * n + row) * 2
 
-    la      s7, TDPtable        # s7 now points to TDPtable
-    add     s7, s7, s6          # s7 now points to TPtable[r][c]
+    la      s7, TDPtable         # s7 now points to TDPtable
+    add     s7, s7, s6           # s7 now points to TDPtable[row][col]
+
+#test TDP[row][col]
+
 
     lw      t0, 0(s7)
     slli    t0, t0, 16
     mv      a0, t0
-    mv      a1, a4
-    call    Fadd                # jump to  Fadd
-    mv      t0, a0              # temp_fp32 += prob_fp32, a4: prob_fp32 /= 8.0f
+    mv      a1, a4              # a4: prob_fp32 = DPtable[r][c]/8.0f
+    sw      s3, 4(sp)
+    call    Fadd                # jump to  Fadd => TDP[row][cow] + DP[r][c] / 8
+    lw      s3, 4(sp)
+    mv      t0, a0              
     lw      a0, 20(sp)
     lw      a1, 16(sp)
     srli    t0, t0, 16          # tran temp_fp32 to bf16 format
-    sh      t0, 0(s7)           # Store fp32_to_bf16(temp_fp32) to DPtable[row][column]
+    sh      t0, 0(s7)           # Store fp32_to_bf16(temp_fp32) to TDPtable[row][column]
     #####
     lw      t0, 4(sp)
 
 next_move:
     addi    t3, t3, 1
-    addi    s9, s9, 1
-    bge     s9, s8, skip_calculate
+    addi    s9, s9, 8
+    addi    s8, s8, -1
+    beqz    s8, skip_calculate
     j       move_loop
 
 
@@ -198,24 +297,61 @@ copy_loop:
     addi    t3, t3, -2          # Decrease counter
     bnez    t3, copy_loop       # Repeat until DPtable is updated
 
-    addi    s3, s3, 1           # i++
-    j       main_loop           # Continue main loop
+    addi    s3, s3, 1           # i++(until >=k)
 
-loop_end:
-    # test
+
+# test_DPtable
+    la      a0, str7
+    li      a7, 4
+    ecall
+    mv      a0, s3
+    li      a7, 1
+    ecall
+    la      a0, str8
+    li      a7, 4
+    ecall
     li      s2, 18
     la      s1, DPtable
-test_loop:
+
+ test_loop_1:
     lh      a0, 0(s1)
-    li      a7, 1
+    slli    a0, a0, 16
+    li      a7, 2
     ecall
     la      a0, str3
     li      a7, 4
     ecall
     addi    s1, s1, 2
     addi    s2, s2, -2
-    bnez    s2, test_loop
-    #
+    bnez    s2, test_loop_1
+    lw      a0, 20(sp)	
+    la      a0, str5
+    li      a7, 4
+    ecall
+#
+
+    j       main_loop           # Continue main loop
+
+loop_end:
+
+# test_DPtable    
+    la      a0, str3
+    li      a7, 4
+    ecall
+    li      s2, 18
+    la      s1, DPtable
+ test_loop_2:
+    lh      a0, 0(s1)
+    slli    a0, 16
+    li      a7, 2
+    ecall
+    la      a0, str3
+    li      a7, 4
+    ecall
+    addi    s1, s1, 2
+    addi    s2, s2, -2
+    bnez    s2, test_loop_2
+#
 sum_dp_table:
     # Arguments: 
     # a0 = n
@@ -246,7 +382,11 @@ inner_loop:
     add     t3, t3, s2          # t3 = i * n + j
     slli    t3, t3, 1           # t3 = (i * n + j) * 2
     
-    # test t3 val
+# test t3(position) val
+    la      a0, str5
+    li      a7, 4
+    ecall
+
     la      a0, str2
     li      a7, 4
     ecall
@@ -254,11 +394,7 @@ inner_loop:
     mv      a0, t3
     li      a7, 1
     ecall
-    
-    la      a0, str5
-    li      a7, 4
-    ecall
-    #
+#
 
     la      t0, DPtable      
     add     t3, t3, t0          # t3 = DPtable[i][j]'s position 
@@ -287,8 +423,10 @@ inner_loop:
 next_i:
     # Increment i
     addi    s1, s1, 1           # i++
-    # test 
-    
+# test_sum 
+    la      a0, str5
+    li      a7, 4
+    ecall
     la      a0, str6
     li      a7, 4
     ecall
@@ -304,12 +442,7 @@ next_i:
     mv      a0, t6
     li      a7, 2
     ecall
-    
-    la      a0, str5
-    li      a7, 4
-    ecall
-    
-    # test
+# test
     j       outer_loop            
 
 
@@ -484,8 +617,13 @@ DPtable:
     .data
 TDPtable:
     .half  0, 0, 0, 0, 0, 0, 0, 0, 0
-str2: .string "Test t3: : "
+str2: .string "Test t3: "
 str3: .string " , "
 str4: .string " test answer : "
 str5: .string "\n"
 str6: .string "round "
+str7: .string "K = "
+str8: .string ":\n"
+str9: .string "move:"
+str10:.string "r"
+str11:.string "c"
